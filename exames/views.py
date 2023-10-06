@@ -5,6 +5,7 @@ from .models import TiposExames, PedidosExames, SolicitacaoExame
 from datetime import datetime
 from django.contrib import messages
 from django.contrib.messages import constants
+import os
 
 
 @login_required
@@ -71,3 +72,50 @@ def cancelar_pedido(request, pedido_id):
     messages.add_message(request, constants.SUCCESS,
                          'Pedido cancelado com sucesso.')
     return redirect('/exames/gerenciar_pedidos/')
+
+
+@login_required
+def gerenciar_exames(request):
+    exames = SolicitacaoExame.objects.filter(usuario=request.user)
+
+    return render(request, 'gerenciar_exames.html', {'exames': exames})
+
+
+@login_required
+def permitir_abrir_exame(request, exame_id):
+    exame = SolicitacaoExame.objects.get(id=exame_id)
+
+    if not exame.requer_senha:
+        if exame.resultado and os.path.exists(exame.resultado.path):
+            # O arquivo PDF do resultado existe, redirecione para o URL
+            return redirect(exame.resultado.url)
+        else:
+            # O arquivo PDF não existe, você pode tratar essa situação de acordo com a sua lógica
+            messages.add_message(request, constants.ERROR,
+                                 'Arquivo PDF do resultado não encontrado.')
+            return redirect(f'/exames/gerenciar_exames/')
+
+    return redirect(f'/exames/solicitar_senha_exame/{exame_id}')
+
+
+@login_required
+def solicitar_senha_exame(request, exame_id):
+    exame = SolicitacaoExame.objects.get(id=exame_id)
+
+    # Verifique se o exame pertence ao usuário atual
+    if exame.usuario != request.user:
+        messages.add_message(request, constants.ERROR,
+                             'Este exame não pertence ao seu usuário.')
+        # Redirecione para a página de gerenciamento de exames ou outro local apropriado
+        return redirect('/exames/gerenciar_exames/')
+
+    if request.method == "GET":
+        return render(request, 'solicitar_senha_exame.html', {'exame': exame})
+    elif request.method == "POST":
+        senha = request.POST.get("senha")
+        # TODO: validar se o exame é do usuário
+        if senha == exame.senha:
+            return redirect(exame.resultado.url)
+        else:
+            messages.add_message(request, constants.ERROR, 'Senha inválida')
+            return redirect(f'/exames/solicitar_senha_exame/{exame.id}')
